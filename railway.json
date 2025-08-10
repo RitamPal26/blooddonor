@@ -1,0 +1,9 @@
+{
+  "build": {
+    "builder": "nixpacks"
+  },
+  "deploy": {
+    "startCommand": "python official_mcp_server.py",
+    "healthcheckPath": "/health"
+  }
+}

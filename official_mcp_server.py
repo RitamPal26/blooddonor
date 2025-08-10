@@ -1,4 +1,4 @@
-# official_mcp_server.py - Railway Compatible Version
+# official_mcp_server.py - 
 import asyncio
 import logging
 import os
@@ -8,8 +8,9 @@ import mcp.server.stdio
 import mcp.types as types
 from typing import Any, Sequence
 from geopy.distance import geodesic
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 # Set up logging
@@ -277,18 +278,29 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> list[
     else:
         raise ValueError(f"Unknown tool: {name}")
 
-# Add HTTP endpoints for Railway compatibility
-app = FastAPI(title="Blood Donor Connect India - Railway Deployment")
+# Create FastAPI app with CORS support
+app = FastAPI(title="Blood Donor Connect India - Railway Deployment with MCP Support")
 
+# Add CORS middleware for MCP client compatibility
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Standard HTTP endpoints for Railway compatibility
 @app.get("/")
 async def root():
     """Main endpoint showing server status"""
     return {
         "message": "🩸 Blood Donor Connect India - MCP Server",
         "status": "running",
-        "platform": "Railway HTTP Deployment",
+        "platform": "Railway HTTP + MCP Deployment",
         "validation_phone": MY_NUMBER,
         "coverage": "Pan-India Blood Donor Network",
+        "mcp_endpoint": "/mcp",
         "tools": ["validate", "register_blood_donor", "find_nearby_donors", "emergency_blood_request", "india_hospitals", "list_donors"],
         "stats": {
             "total_donors": len(donors),
@@ -306,7 +318,8 @@ async def health_check():
         "platform": "Railway",
         "validation_phone": MY_NUMBER,
         "total_donors": len(donors),
-        "total_requests": len(requests)
+        "total_requests": len(requests),
+        "mcp_support": True
     }
 
 @app.get("/validate")
@@ -338,18 +351,114 @@ async def list_tools_http():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error listing tools: {str(e)}")
 
+# MCP JSON-RPC endpoint (fixes the 405 error)
+@app.post("/mcp")
+async def mcp_endpoint(request: Request):
+    """Handle MCP JSON-RPC requests - This fixes the 405 Method Not Allowed error"""
+    try:
+        # Get JSON-RPC payload
+        payload = await request.json()
+        logger.info(f"Received MCP request: {payload.get('method')}")
+        
+        # Handle different MCP methods
+        if payload.get("method") == "initialize":
+            return JSONResponse({
+                "jsonrpc": "2.0",
+                "id": payload.get("id"),
+                "result": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {
+                        "experimental": {},
+                        "tools": {"listChanged": False}
+                    },
+                    "serverInfo": {
+                        "name": "blood-donor-india",
+                        "version": "1.0.0"
+                    }
+                }
+            })
+        
+        elif payload.get("method") == "notifications/initialized":
+            # Just acknowledge the initialization notification
+            return JSONResponse({"status": "acknowledged"})
+        
+        elif payload.get("method") == "tools/list":
+            tools = await handle_list_tools()
+            return JSONResponse({
+                "jsonrpc": "2.0", 
+                "id": payload.get("id"),
+                "result": {
+                    "tools": [
+                        {
+                            "name": tool.name, 
+                            "description": tool.description, 
+                            "inputSchema": tool.inputSchema
+                        } 
+                        for tool in tools
+                    ]
+                }
+            })
+        
+        elif payload.get("method") == "tools/call":
+            params = payload.get("params", {})
+            tool_name = params.get("name")
+            arguments = params.get("arguments", {})
+            
+            if not tool_name:
+                return JSONResponse({
+                    "jsonrpc": "2.0",
+                    "id": payload.get("id"),
+                    "error": {"code": -32602, "message": "Missing tool name"}
+                })
+            
+            result = await handle_call_tool(tool_name, arguments)
+            return JSONResponse({
+                "jsonrpc": "2.0",
+                "id": payload.get("id"), 
+                "result": {
+                    "content": [
+                        {
+                            "type": "text", 
+                            "text": result[0].text
+                        }
+                    ]
+                }
+            })
+        
+        else:
+            return JSONResponse({
+                "jsonrpc": "2.0",
+                "id": payload.get("id"),
+                "error": {"code": -32601, "message": f"Method not found: {payload.get('method')}"}
+            })
+    
+    except Exception as e:
+        logger.error(f"MCP endpoint error: {str(e)}")
+        return JSONResponse({
+            "jsonrpc": "2.0", 
+            "id": payload.get("id", None) if 'payload' in locals() else None,
+            "error": {"code": -32603, "message": f"Internal error: {str(e)}"}
+        }, status_code=500)
+
+# Support OPTIONS method for CORS preflight
+@app.options("/mcp")
+async def mcp_options():
+    """Handle CORS preflight for MCP endpoint"""
+    return {"status": "ok"}
+
 async def main():
     print("=== Blood Donor Connect MCP Server for India ===")
-    print("Platform: Railway HTTP Deployment")
+    print("Platform: Railway HTTP + MCP Deployment")
     print(f"Validation Phone: {MY_NUMBER}")
     print("Coverage: Pan-India Blood Donor Network")
     
-    # Get port from Railway environment
+    # Get port from Railway environment  
     port = int(os.environ.get("PORT", 8080))
     host = "0.0.0.0"  # Required for Railway
     
     print(f"🌐 Starting HTTP server on {host}:{port}")
     print("🩸 Blood donor tools ready for PuchAI submission")
+    print("📡 MCP endpoint available at /mcp")
     print("=" * 50)
     
     # Run FastAPI server for Railway
