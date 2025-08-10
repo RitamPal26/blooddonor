@@ -1,12 +1,16 @@
-# official_mcp_server.py
+# official_mcp_server.py - Railway Compatible Version
 import asyncio
 import logging
+import os
 from mcp.server import NotificationOptions, Server
 from mcp.server.models import InitializationOptions
 import mcp.server.stdio
 import mcp.types as types
 from typing import Any, Sequence
 from geopy.distance import geodesic
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
+import uvicorn
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -273,31 +277,90 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> list[
     else:
         raise ValueError(f"Unknown tool: {name}")
 
+# Add HTTP endpoints for Railway compatibility
+app = FastAPI(title="Blood Donor Connect India - Railway Deployment")
+
+@app.get("/")
+async def root():
+    """Main endpoint showing server status"""
+    return {
+        "message": "🩸 Blood Donor Connect India - MCP Server",
+        "status": "running",
+        "platform": "Railway HTTP Deployment",
+        "validation_phone": MY_NUMBER,
+        "coverage": "Pan-India Blood Donor Network",
+        "tools": ["validate", "register_blood_donor", "find_nearby_donors", "emergency_blood_request", "india_hospitals", "list_donors"],
+        "stats": {
+            "total_donors": len(donors),
+            "total_requests": len(requests)
+        }
+    }
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for Railway"""
+    return {
+        "status": "healthy",
+        "service": "blood-donor-india-mcp",
+        "server_name": "blood-donor-india",
+        "platform": "Railway",
+        "validation_phone": MY_NUMBER,
+        "total_donors": len(donors),
+        "total_requests": len(requests)
+    }
+
+@app.get("/validate")
+async def validate_endpoint():
+    """PuchAI validation endpoint via HTTP"""
+    return {
+        "phone": MY_NUMBER,
+        "status": "valid",
+        "service": "blood-donor-india"
+    }
+
+@app.get("/tools")
+async def list_tools_http():
+    """List all MCP tools via HTTP"""
+    try:
+        tools = await handle_list_tools()
+        return {
+            "tools": [
+                {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "required_params": tool.inputSchema.get("required", []) if hasattr(tool, 'inputSchema') else []
+                }
+                for tool in tools
+            ],
+            "total": len(tools),
+            "server": "blood-donor-india"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error listing tools: {str(e)}")
+
 async def main():
     print("=== Blood Donor Connect MCP Server for India ===")
-    print("Platform: Official MCP SDK")
+    print("Platform: Railway HTTP Deployment")
     print(f"Validation Phone: {MY_NUMBER}")
     print("Coverage: Pan-India Blood Donor Network")
+    
+    # Get port from Railway environment
+    port = int(os.environ.get("PORT", 8080))
+    host = "0.0.0.0"  # Required for Railway
+    
+    print(f"🌐 Starting HTTP server on {host}:{port}")
+    print("🩸 Blood donor tools ready for PuchAI submission")
     print("=" * 50)
     
-    import os
-    port = int(os.environ.get("PORT", 8080))
-    host = os.environ.get("HOST", "0.0.0.0")
-    
-    # Run the server using stdio transport
-    async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
-        await server.run(
-            read_stream,
-            write_stream,
-            InitializationOptions(
-                server_name="blood-donor-india",
-                server_version="1.0.0",
-                capabilities=server.get_capabilities(
-                    notification_options=NotificationOptions(),
-                    experimental_capabilities={},
-                ),
-            ),
-        )
+    # Run FastAPI server for Railway
+    config = uvicorn.Config(
+        app, 
+        host=host, 
+        port=port, 
+        log_level="info"
+    )
+    server_instance = uvicorn.Server(config)
+    await server_instance.serve()
 
 if __name__ == "__main__":
     asyncio.run(main())
