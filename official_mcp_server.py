@@ -1,5 +1,4 @@
 # Enhanced Blood Donor Connect India - Hospital Selection Based MCP Server
-# Complete corrected version with all improvements
 
 import asyncio
 import logging
