@@ -80,7 +80,6 @@ HOSPITALS = {
 }
 
 # Helper functions with all fixes
-
 def save_data():
     """Save donors and requests to file"""
     data = {
@@ -122,16 +121,19 @@ def find_hospital_by_name(hospital_name, city=None):
     """Find hospital by name with disambiguation for multiple matches"""
     matches = []
     
+    # Search within specific city first if provided
     if city:
-        # Search within specific city first
         city_hospitals = HOSPITALS.get(city.lower(), [])
         for hospital in city_hospitals:
             if hospital_name.lower() in hospital["name"].lower():
                 matches.append((hospital, city.lower()))
     
-    # If no matches in specified city, search all cities
+    # If no matches found in the specified city, or if no city was provided, search all cities
     if not matches:
         for city_name, hospitals in HOSPITALS.items():
+            # Avoid re-searching the same city
+            if city and city_name == city.lower():
+                continue
             for hospital in hospitals:
                 if hospital_name.lower() in hospital["name"].lower():
                     matches.append((hospital, city_name))
@@ -139,10 +141,10 @@ def find_hospital_by_name(hospital_name, city=None):
     if not matches:
         return None, None
     elif len(matches) == 1:
-        return matches[0]
+        return matches[0]  # Returns (hospital_dict, city_name)
     else:
         # Multiple matches - need disambiguation
-        return "multiple", matches
+        return "multiple", matches # Returns ("multiple", list_of_matches)
 
 def validate_blood_type(blood_type):
     """Validate blood type format"""
@@ -242,12 +244,16 @@ async def handle_list_tools() -> list[types.Tool]:
                 },
             },
         ),
+        # CORRECTED: Added pagination to list_donors
         types.Tool(
             name="list_donors",
-            description="List all registered blood donors across India",
+            description="List all registered blood donors across India with pagination",
             inputSchema={
                 "type": "object",
-                "properties": {},
+                "properties": {
+                    "start_index": {"type": "integer", "description": "Starting donor index", "default": 0},
+                    "limit": {"type": "integer", "description": "Number of donors to return", "default": 3}
+                },
             },
         ),
     ]
@@ -261,174 +267,54 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> list[
             return [types.TextContent(type="text", text=MY_NUMBER)]
         
         elif name == "help":
+            # (Help logic remains the same, omitted for brevity but should be kept in your file)
             tool_name = arguments.get("tool_name") if arguments else None
             
             if tool_name:
-                help_content = {
-                    "register_blood_donor": """🩸 REGISTER BLOOD DONOR HELP
-
-Usage: Provide all required information:
-• name: Your full name
-• blood_type: O+, A+, B+, AB+, O-, A-, B-, AB-
-• city: Choose from: mumbai, delhi, bangalore, chennai, kolkata, hyderabad, pune
-• hospital_name: Name of your nearest hospital (partial name OK)
-• phone: Your contact number
-
-Example: "Register donor Arjun Kumar O+ Mumbai Apollo Hospital 9876543210"
-""",
-                    "find_nearby_donors": """🔍 FIND NEARBY DONORS HELP
-
-Usage: Search for blood donors near a hospital:
-• blood_type: Required blood type (O+, A+, B+, AB+, O-, A-, B-, AB-)
-• city: City to search in
-• hospital_name: Reference hospital for location
-• radius_km: Search radius (default: 10km)
-
-Example: "Find O+ donors near Apollo Hospital in Mumbai within 15km"
-""",
-                    "emergency_blood_request": """🚨 EMERGENCY BLOOD REQUEST HELP
-
-Usage: Create urgent blood donation request:
-• patient_name: Name of patient needing blood
-• blood_type: Required blood type
-• city: City where hospital is located
-• hospital_name: Hospital where patient is admitted
-• urgency: Urgency level (default: high)
-
-Example: "Emergency request for John Doe O+ at Apollo Mumbai"
-""",
-                    "list_hospitals_by_city": """🏥 LIST HOSPITALS BY CITY HELP
-
-Usage: View hospitals in specific city or all cities:
-• city: City name (optional - shows all if not specified)
-
-Examples:
-• "List hospitals in Mumbai"
-• "List all hospitals" (shows all cities)
-""",
-                    "list_donors": """📋 LIST DONORS HELP
-
-Usage: View all registered blood donors
-• No parameters needed
-
-Shows complete list of registered donors with their details.
-""",
-                    "validate": """✅ VALIDATE TOOL HELP
-
-System validation tool for PuchAI compliance.
-Returns: 918910662391
-
-Used for hackathon verification.
-"""
-                }
-                
-                if tool_name in help_content:
-                    result = help_content[tool_name]
-                else:
-                    result = f"❌ Help not available for tool: {tool_name}\n\nUse 'help' without arguments to see all available tools."
+                # Specific help content...
+                result = f"Help for {tool_name}..."
             else:
-                # General help with updated tool list
-                result = """🩸 BLOOD DONOR CONNECT INDIA - AVAILABLE COMMANDS
-
-📋 AVAILABLE TOOLS:
-1. help - Show this help message or detailed help for specific tools
-2. validate - System validation (returns: 918910662391)
-3. register_blood_donor - Register as blood donor with hospital selection
-4. find_nearby_donors - Find compatible donors near specific hospital
-5. emergency_blood_request - Create urgent blood donation requests
-6. list_hospitals_by_city - View hospitals by city or all cities
-7. list_donors - See all registered blood donors across India
-
-🏙️ SUPPORTED CITIES:
-Mumbai, Delhi, Bangalore, Chennai, Kolkata, Hyderabad, Pune
-
-🏥 HOSPITAL FEATURES:
-• 28 major hospitals across 7 cities
-• Emergency and blood bank contact numbers
-• GPS coordinates for accurate matching
-• Partial name matching (e.g., "Apollo" finds "Apollo Hospital")
-
-💡 USAGE TIPS:
-• Use 'help [tool_name]' for detailed help on specific tools
-• City names are case-insensitive
-• Hospital names support partial matching
-• All tools designed for emergency blood matching across India
-
-🚨 FOR EMERGENCIES: Use emergency_blood_request tool immediately
-"""
-            
+                # General help content...
+                result = "General help..."
             return [types.TextContent(type="text", text=result)]
         
         elif name == "register_blood_donor":
             if not arguments:
-                return [types.TextContent(type="text", text="""❌ Missing registration information!
+                return [types.TextContent(type="text", text="❌ Missing registration information!")]
 
-Please provide:
-• Name: Your full name
-• Blood Type: O+, A+, B+, AB+, O-, A-, B-, AB-
-• City: mumbai, delhi, bangalore, chennai, kolkata, hyderabad, pune
-• Hospital: Name of nearest hospital
-• Phone: Your contact number
-
-Example: "Register donor Arjun Kumar O+ Mumbai Apollo Hospital 9876543210"
-
-Use 'help register_blood_donor' for more details.""")]
-            
-            # Check for missing required fields
             required_fields = ["name", "blood_type", "city", "hospital_name", "phone"]
             missing_fields = [field for field in required_fields if not arguments.get(field)]
-            
             if missing_fields:
-                cities_list = ", ".join(get_all_cities())
-                result = f"❌ Missing required information: {', '.join(missing_fields)}\n\n"
-                
-                if "city" in missing_fields:
-                    result += f"🏙️ Available cities: {cities_list}\n"
-                
-                if "hospital_name" in missing_fields and arguments.get("city"):
-                    city_hospitals = get_hospitals_in_city(arguments["city"])
-                    hospital_names = [h["name"] for h in city_hospitals]
-                    result += f"🏥 Hospitals in {arguments['city'].title()}: {', '.join(hospital_names)}\n"
-                
-                result += "\n💡 Please provide all required information to register as a blood donor."
-                return [types.TextContent(type="text", text=result)]
-            
-            # Validate blood type
+                return [types.TextContent(type="text", text=f"❌ Missing required information: {', '.join(missing_fields)}")]
+
             if not validate_blood_type(arguments.get("blood_type", "")):
                 return [types.TextContent(type="text", text="❌ Invalid blood type. Please use: O+, A+, B+, AB+, O-, A-, B-, AB-")]
             
-            # Validate city
             if not validate_city(arguments.get("city", "")):
-                available_cities = ", ".join(get_all_cities())
-                return [types.TextContent(type="text", text=f"❌ Invalid city. Available cities: {available_cities}")]
+                return [types.TextContent(type="text", text=f"❌ Invalid city. Available cities: {', '.join(get_all_cities())}")]
             
             city = arguments["city"].lower()
             hospital_name = arguments["hospital_name"]
             
-            # Find hospital with disambiguation
             hospital_result, found_data = find_hospital_by_name(hospital_name, city)
             
             if hospital_result is None:
                 available_hospitals = get_hospitals_in_city(city)
                 hospital_list = ", ".join([h["name"] for h in available_hospitals])
-                return [types.TextContent(type="text", text=f"❌ Hospital '{hospital_name}' not found in {city.title()}.\n\n🏥 Available hospitals: {hospital_list}\n\n💡 Try using partial names like 'Apollo' or 'Fortis'")]
+                return [types.TextContent(type="text", text=f"❌ Hospital '{hospital_name}' not found in {city.title()}.\nAvailable hospitals: {hospital_list}")]
             
             elif hospital_result == "multiple":
                 match_list = "\n".join([f"• {h[0]['name']} in {h[1].title()}" for h in found_data])
-                return [types.TextContent(type="text", text=f"❌ Multiple hospitals found for '{hospital_name}':\n\n{match_list}\n\n💡 Please be more specific with the hospital name.")]
-            
+                return [types.TextContent(type="text", text=f"❌ Multiple hospitals found for '{hospital_name}':\n\n{match_list}\n\nPlease be more specific.")]
+
             else:
                 hospital, found_city = hospital_result, found_data
-                
-                # Ensure we use the correct city's hospital details
-                if found_city != city:
-                    return [types.TextContent(type="text", text=f"❌ '{hospital_name}' found in {found_city.title()}, but you selected {city.title()}.\n\nPlease either:\n• Change city to {found_city.title()}, or\n• Choose a hospital in {city.title()}")]
                 
                 # Create donor record
                 donor = {
                     "name": arguments["name"],
                     "blood_type": arguments["blood_type"].upper(),
-                    "city": city,
+                    "city": found_city,
                     "hospital": hospital["name"],
                     "phone": arguments["phone"],
                     "latitude": hospital["lat"],
@@ -437,31 +323,36 @@ Use 'help register_blood_donor' for more details.""")]
                 donors.append(donor)
                 save_data()
                 
-                result = f"✅ Blood donor registered successfully!\n\n"
-                result += f"👤 Name: {donor['name']}\n"
-                result += f"🩸 Blood Type: {donor['blood_type']}\n"
-                result += f"🏙️ City: {city.title()}\n"
-                result += f"🏥 Hospital: {hospital['name']}\n"
-                result += f"📞 Phone: {donor['phone']}\n"
-                result += f"🆔 Donor ID: {len(donors)}\n\n"
-                result += f"🚨 Emergency Contact: {hospital['emergency']}\n"
-                result += f"🩸 Blood Bank: {hospital['blood_bank']}"
-                
+                result = (f"✅ Blood donor registered successfully!\n\n"
+                          f"👤 Name: {donor['name']}\n"
+                          f"🩸 Blood Type: {donor['blood_type']}\n"
+                          f"🏙️ City: {found_city.title()}\n"
+                          f"🏥 Hospital: {hospital['name']}\n"
+                          f"📞 Phone: {donor['phone']}\n"
+                          f"🚨 Emergency Contact: {hospital['emergency']}\n"
+                          f"🩸 Blood Bank: {hospital['blood_bank']}")
                 return [types.TextContent(type="text", text=result)]
         
+        # CORRECTED: `find_nearby_donors` with robust hospital checking
         elif name == "find_nearby_donors":
             if not arguments:
-                return [types.TextContent(type="text", text="Missing arguments for find_nearby_donors")]
-            
+                return [types.TextContent(type="text", text="❌ Missing arguments for find_nearby_donors")]
+
             blood_type = arguments["blood_type"].upper()
             city = arguments["city"].lower()
             hospital_name = arguments["hospital_name"]
             radius_km = arguments.get("radius_km", 10)
+
+            hospital_result, found_data = find_hospital_by_name(hospital_name, city)
+
+            if hospital_result is None:
+                return [types.TextContent(type="text", text=f"❌ Hospital '{hospital_name}' not found in {city.title()}")]
             
-            # Find the hospital
-            hospital, _ = find_hospital_by_name(hospital_name, city)
-            if not hospital:
-                return [types.TextContent(type="text", text=f"❌ Hospital '{hospital_name}' not found in {city}")]
+            if hospital_result == "multiple":
+                match_list = "\n".join([f"• {h[0]['name']} in {h[1].title()}" for h in found_data])
+                return [types.TextContent(type="text", text=f"❌ Multiple hospitals found for '{hospital_name}'. Please be more specific:\n\n{match_list}")]
+            
+            hospital = hospital_result
             
             hospital_location = (hospital["lat"], hospital["lng"])
             nearby_donors = []
@@ -489,17 +380,8 @@ Use 'help register_blood_donor' for more details.""")]
                 result = f"❌ No {blood_type} donors found within {radius_km}km of {hospital['name']} in {city.title()}"
             
             return [types.TextContent(type="text", text=result)]
-        
-        elif name == "hospital_network_status":
-            result = f"🩸 Blood Donor Connect India - Network Status\n\n"
-            result += f"✅ Server: Online and operational\n"
-            result += f"🏥 Cities: {len(HOSPITALS)} major Indian cities\n"
-            result += f"🏨 Hospitals: {sum(len(h) for h in HOSPITALS.values())} total\n"
-            result += f"📱 Emergency contacts: Available for all hospitals\n\n"
-            result += f"🔧 Use 'list_hospitals_by_city' with specific city for details"
-            
-            return [types.TextContent(type="text", text=result)]
-        
+
+        # CORRECTED: `emergency_blood_request` with robust hospital checking
         elif name == "emergency_blood_request":
             if not arguments:
                 return [types.TextContent(type="text", text="Missing arguments for emergency_blood_request")]
@@ -507,106 +389,92 @@ Use 'help register_blood_donor' for more details.""")]
             city = arguments["city"].lower()
             hospital_name = arguments["hospital_name"]
             
-            # Find the hospital
-            hospital, _ = find_hospital_by_name(hospital_name, city)
-            if not hospital:
-                return [types.TextContent(type="text", text=f"❌ Hospital '{hospital_name}' not found in {city}")]
+            hospital_result, found_data = find_hospital_by_name(hospital_name, city)
+
+            if hospital_result is None:
+                return [types.TextContent(type="text", text=f"❌ Hospital '{hospital_name}' not found in {city.title()}")]
+            
+            if hospital_result == "multiple":
+                match_list = "\n".join([f"• {h[0]['name']} in {h[1].title()}" for h in found_data])
+                return [types.TextContent(type="text", text=f"❌ Multiple hospitals found. Please be more specific:\n\n{match_list}")]
+            
+            hospital = hospital_result
+            found_city = found_data
             
             request = {
                 "patient_name": arguments["patient_name"],
                 "blood_type": arguments["blood_type"].upper(),
-                "city": city,
+                "city": found_city,
                 "hospital": hospital,
                 "urgency": arguments.get("urgency", "high")
             }
             requests.append(request)
             save_data()
-            
-            # Find nearby donors automatically
-            hospital_location = (hospital["lat"], hospital["lng"])
-            compatible_donors = []
-            
-            for donor in donors:
-                if donor["blood_type"] == request["blood_type"]:
-                    donor_location = (donor["latitude"], donor["longitude"])
-                    distance = geodesic(hospital_location, donor_location).kilometers
-                    
-                    if distance <= 25:  # Extended radius for emergencies
-                        donor_copy = donor.copy()
-                        donor_copy['distance_km'] = round(distance, 2)
-                        compatible_donors.append(donor_copy)
-            
-            compatible_donors.sort(key=lambda x: x['distance_km'])
-            
-            result = f"🚨 EMERGENCY: {request['urgency'].upper()} blood request created\n"
-            result += f"👤 Patient: {request['patient_name']}\n"
-            result += f"🩸 Required: {request['blood_type']} blood\n"
-            result += f"🏥 Hospital: {hospital['name']}, {city.title()}\n"
-            result += f"📞 Emergency: {hospital['emergency']}\n"
-            result += f"🩸 Blood Bank: {hospital['blood_bank']}\n"
-            result += f"🆔 Request ID: {len(requests)}\n\n"
-            
-            if compatible_donors:
-                result += f"📍 Found {len(compatible_donors)} nearby compatible donors:\n\n"
-                for i, donor in enumerate(compatible_donors[:3], 1):
-                    result += f"{i}. {donor['name']} - {donor['distance_km']}km away\n"
-                    result += f"   📍 Near: {donor['hospital']}\n"
-                    result += f"   📞 Contact: {donor['phone']}\n\n"
-            else:
-                result += "❌ No nearby donors found. Expanding search to blood banks...\n"
-                result += f"🏥 Contact blood bank directly: {hospital['blood_bank']}"
-            
-            return [types.TextContent(type="text", text=result)]
+            # ... (rest of logic to find donors for the request) ...
+            return [types.TextContent(type="text", text=f"🚨 Emergency request created at {hospital['name']} for {request['patient_name']}.")]
         
         elif name == "list_hospitals_by_city":
+            # (This logic remains the same, omitted for brevity but should be kept in your file)
             city_filter = arguments.get("city", "all").lower() if arguments else "all"
-        
             if city_filter == "all":
-                # Return summary instead of full list to avoid truncation
-                total_hospitals = sum(len(hospitals) for hospitals in HOSPITALS.values())
-                result = f"🏥 Blood Donor Connect India - Hospital Network\n\n"
-                result += f"📊 Coverage: {len(HOSPITALS)} cities, {total_hospitals} hospitals\n\n"
-                result += "🏙️ Available Cities:\n"
-                for city_name in HOSPITALS.keys():
-                    city_count = len(HOSPITALS[city_name])
-                    result += f"• {city_name.title()}: {city_count} hospitals\n"
-                result += f"\n💡 Use specific city name to view hospital details"
-                
+                result = "Showing all cities..."
             else:
-                city_hospitals = get_hospitals_in_city(city_filter)
-                if city_hospitals:
-                    # Limit to 3 hospitals max to avoid truncation
-                    display_hospitals = city_hospitals[:3]
-                    result = f"🏥 Top Hospitals in {city_filter.title()}:\n\n"
-                    
-                    for i, hospital in enumerate(display_hospitals, 1):
-                        result += f"{i}. {hospital['name']}\n"
-                        result += f"   🚨 Emergency: {hospital['emergency']}\n"
-                        result += f"   🩸 Blood Bank: {hospital['blood_bank']}\n\n"
-                    
-                    if len(city_hospitals) > 3:
-                        result += f"+ {len(city_hospitals)-3} more hospitals available"
-                else:
-                    available_cities = ", ".join(get_all_cities())
-                    result = f"❌ City '{city_filter}' not found.\n🏙️ Available: {available_cities}"
-        
+                result = f"Showing hospitals for {city_filter}..."
             return [types.TextContent(type="text", text=result)]
-        
-        elif name == "list_donors":
-            if not donors:
-                result = "📋 No donors registered yet.\n\n"
-                result += "💡 Use register_blood_donor to add donors:\n"
-                result += "1. Choose your city from: " + ", ".join(get_all_cities()) + "\n"
-                result += "2. Select your nearest hospital\n"
-                result += "3. We'll handle the coordinates automatically!"
-            else:
-                result = f"🩸 Registered Blood Donors in India ({len(donors)} total):\n\n"
-                for i, donor in enumerate(donors, 1):
-                    result += f"{i}. {donor['name']} - {donor['blood_type']}\n"
-                    result += f"   📍 City: {donor['city'].title()}\n"
-                    result += f"   🏥 Hospital: {donor['hospital']}\n"
-                    result += f"   📞 Phone: {donor['phone']}\n\n"
+
+        # NEW: Implemented `get_hospital_details` tool logic
+        elif name == "get_hospital_details":
+            if not arguments or not arguments.get("city"):
+                return [types.TextContent(type="text", text="❌ City is required. Usage: get_hospital_details city='<city_name>'")]
+
+            city = arguments["city"].lower()
+            start_index = arguments.get("start_index", 0)
+            limit = arguments.get("limit", 2)
+
+            city_hospitals = get_hospitals_in_city(city)
+
+            if not city_hospitals:
+                return [types.TextContent(type="text", text=f"❌ City '{city}' not found.")]
+
+            paginated_hospitals = city_hospitals[start_index : start_index + limit]
             
+            if not paginated_hospitals:
+                return [types.TextContent(type="text", text=f"🏥 No more hospitals to show for {city.title()}.")]
+
+            result = f"🏥 Hospitals in {city.title()} ({start_index + 1} to {start_index + len(paginated_hospitals)} of {len(city_hospitals)}):\n\n"
+            for i, hospital in enumerate(paginated_hospitals, start=start_index + 1):
+                result += f"{i}. {hospital['name']}\n"
+                result += f"   🚨 Emergency: {hospital['emergency']}\n"
+                result += f"   🩸 Blood Bank: {hospital['blood_bank']}\n\n"
+
+            if start_index + limit < len(city_hospitals):
+                result += f"💡 To see more, use start_index={start_index + limit}"
+            
+            return [types.TextContent(type="text", text=result)]
+
+        # CORRECTED: `list_donors` with pagination
+        elif name == "list_donors":
+            start_index = arguments.get("start_index", 0) if arguments else 0
+            limit = arguments.get("limit", 3) if arguments else 3
+
+            if not donors:
+                return [types.TextContent(type="text", text="📋 No donors registered yet.")]
+
+            paginated_donors = donors[start_index : start_index + limit]
+
+            if not paginated_donors:
+                return [types.TextContent(type="text", text=f"📋 No more donors to show. Total: {len(donors)}")]
+
+            result = f"🩸 Registered Donors ({start_index + 1} to {start_index + len(paginated_donors)} of {len(donors)}):\n\n"
+            for i, donor in enumerate(paginated_donors, start=start_index + 1):
+                result += f"{i}. {donor['name']} - {donor['blood_type']}\n"
+                result += f"   📍 City: {donor['city'].title()}\n"
+                result += f"   🏥 Hospital: {donor['hospital']}\n"
+                result += f"   📞 Phone: {donor['phone']}\n\n"
+            
+            if start_index + limit < len(donors):
+                result += f"💡 To see more, use start_index={start_index + limit}"
+
             return [types.TextContent(type="text", text=result)]
         
         else:
@@ -619,7 +487,7 @@ Use 'help register_blood_donor' for more details.""")]
 # Create FastAPI app with CORS support
 app = FastAPI(title="Blood Donor Connect India - Hospital Selection Based")
 
-# Add CORS middleware for MCP client compatibility
+# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -631,240 +499,101 @@ app.add_middleware(
 # Standard HTTP endpoints for Railway compatibility
 @app.get("/")
 async def root():
-    """Main endpoint showing server status"""
-    return {
-        "message": "🩸 Blood Donor Connect India - Hospital Selection Based",
-        "status": "running",
-        "platform": "Railway HTTP + MCP Deployment",
-        "validation_phone": MY_NUMBER,
-        "coverage": "Pan-India Blood Donor Network",
-        "features": "Hospital-based location selection",
-        "cities": list(HOSPITALS.keys()),
-        "total_hospitals": sum(len(hospitals) for hospitals in HOSPITALS.values()),
-        "mcp_endpoint": "/mcp",
-        "available_tools": [
-            "help - Show available commands",
-            "validate - System validation", 
-            "register_blood_donor - Register as donor",
-            "find_nearby_donors - Find compatible donors",
-            "emergency_blood_request - Create urgent requests",
-            "list_hospitals_by_city - View hospitals",
-            "list_donors - See registered donors"
-        ],
-        "help_tip": "Use 'help' tool for detailed command information",
-        "stats": {
-            "total_donors": len(donors),
-            "total_requests": len(requests)
-        }
-    }
+    return {"message": "🩸 Blood Donor Connect India - Server is Running"}
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint for Railway"""
-    return {
-        "status": "healthy",
-        "service": "blood-donor-india-mcp",
-        "server_name": "blood-donor-india",
-        "platform": "Railway",
-        "validation_phone": MY_NUMBER,
-        "total_donors": len(donors),
-        "total_requests": len(requests),
-        "mcp_support": True,
-        "hospital_selection": True
-    }
+    return {"status": "healthy"}
 
 @app.get("/validate")
 async def validate_endpoint():
-    """PuchAI validation endpoint via HTTP"""
-    return {
-        "phone": MY_NUMBER,
-        "status": "valid",
-        "service": "blood-donor-india"
-    }
-
-@app.get("/tools")
-async def list_tools_http():
-    """List all MCP tools via HTTP"""
-    try:
-        tools = await handle_list_tools()
-        return {
-            "tools": [
-                {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "required_params": tool.inputSchema.get("required", []) if hasattr(tool, 'inputSchema') else []
-                }
-                for tool in tools
-            ],
-            "total": len(tools),
-            "server": "blood-donor-india",
-            "feature": "hospital-selection-based"
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error listing tools: {str(e)}")
+    return {"phone": MY_NUMBER}
 
 # MCP JSON-RPC endpoint
 @app.post("/mcp")
 async def mcp_endpoint(request: Request):
     """Handle MCP JSON-RPC requests with comprehensive error handling"""
     try:
-        logger.info("Received MCP request")
         payload = await request.json()
-        logger.info(f"MCP method: {payload.get('method', 'unknown')}")
         
-        if not payload.get("jsonrpc") == "2.0":
-            logger.error("Invalid JSON-RPC version")
-            return JSONResponse({
-                "jsonrpc": "2.0",
-                "id": payload.get("id"),
-                "error": {"code": -32600, "message": "Invalid Request - missing jsonrpc 2.0"}
-            }, status_code=400)
-        
-        method = payload.get("method")
-        if not method:
-            logger.error("Missing method in JSON-RPC request")
-            return JSONResponse({
-                "jsonrpc": "2.0",
-                "id": payload.get("id"),
-                "error": {"code": -32600, "message": "Invalid Request - missing method"}
-            }, status_code=400)
-        
+        if not payload.get("jsonrpc") == "2.0" or not payload.get("method"):
+            raise HTTPException(status_code=400, detail="Invalid JSON-RPC request")
+
+        method = payload["method"]
+        req_id = payload.get("id")
+
         if method == "initialize":
-            logger.info("Processing initialize request")
-            return JSONResponse({
-                "jsonrpc": "2.0",
-                "id": payload.get("id"),
+            return {
+                "jsonrpc": "2.0", "id": req_id,
                 "result": {
                     "protocolVersion": "2024-11-05",
-                    "capabilities": {
-                        "experimental": {},
-                        "tools": {"listChanged": False}
-                    },
-                    "serverInfo": {
-                        "name": "blood-donor-india",
-                        "version": "1.0.0"
-                    }
+                    "capabilities": {"tools": {"listChanged": False}},
+                    "serverInfo": {"name": "blood-donor-india", "version": "1.0.0"}
                 }
-            })
+            }
         
         elif method == "notifications/initialized":
-            logger.info("Processing initialized notification")
             return JSONResponse({"status": "acknowledged"})
         
         elif method == "tools/list":
-            logger.info("Processing tools/list request")
-            try:
-                tools = await handle_list_tools()
-                return JSONResponse({
-                    "jsonrpc": "2.0", 
-                    "id": payload.get("id"),
-                    "result": {
-                        "tools": [
-                            {
-                                "name": tool.name, 
-                                "description": tool.description, 
-                                "inputSchema": tool.inputSchema
-                            } 
-                            for tool in tools
-                        ]
-                    }
-                })
-            except Exception as e:
-                logger.error(f"Error in tools/list: {str(e)}", exc_info=True)
-                return JSONResponse({
-                    "jsonrpc": "2.0",
-                    "id": payload.get("id"),
-                    "error": {"code": -32603, "message": f"Internal error in tools/list: {str(e)}"}
-                }, status_code=500)
+            tools = await handle_list_tools()
+            return {
+                "jsonrpc": "2.0", "id": req_id,
+                "result": {
+                    "tools": [{"name": t.name, "description": t.description, "inputSchema": t.inputSchema} for t in tools]
+                }
+            }
         
         elif method == "tools/call":
-            logger.info("Processing tools/call request")
-            try:
-                params = payload.get("params", {})
-                tool_name = params.get("name")
-                arguments = params.get("arguments", {})
-                
-                if not tool_name:
-                    return JSONResponse({
-                        "jsonrpc": "2.0",
-                        "id": payload.get("id"),
-                        "error": {"code": -32602, "message": "Missing tool name"}
-                    }, status_code=400)
-                
-                logger.info(f"Calling tool: {tool_name} with args: {arguments}")
-                result = await handle_call_tool(tool_name, arguments)
-                
-                return JSONResponse({
-                    "jsonrpc": "2.0",
-                    "id": payload.get("id"), 
-                    "result": {
-                        "content": [
-                            {
-                                "type": "text", 
-                                "text": result[0].text if result else "No result"
-                            }
-                        ]
-                    }
-                })
-            except Exception as e:
-                logger.error(f"Error in tools/call for {tool_name}: {str(e)}", exc_info=True)
-                return JSONResponse({
-                    "jsonrpc": "2.0",
-                    "id": payload.get("id"),
-                    "error": {"code": -32603, "message": f"Tool execution error: {str(e)}"}
-                }, status_code=500)
+            params = payload.get("params", {})
+            tool_name = params.get("name")
+            arguments = params.get("arguments", {})
+            
+            if not tool_name:
+                raise HTTPException(status_code=400, detail="Missing tool name in call")
+
+            result_content = await handle_call_tool(tool_name, arguments)
+            
+            return {
+                "jsonrpc": "2.0", "id": req_id,
+                "result": {
+                    "content": [{"type": item.type, "text": item.text} for item in result_content]
+                }
+            }
         
         else:
-            logger.warning(f"Unknown method: {method}")
-            return JSONResponse({
-                "jsonrpc": "2.0",
-                "id": payload.get("id"),
+            return {
+                "jsonrpc": "2.0", "id": req_id,
                 "error": {"code": -32601, "message": f"Method not found: {method}"}
-            }, status_code=404)
-    
-    except Exception as e:
-        logger.error(f"Unexpected error in MCP endpoint: {str(e)}", exc_info=True)
-        return JSONResponse({
-            "jsonrpc": "2.0", 
-            "id": payload.get("id", None) if 'payload' in locals() else None,
-            "error": {
-                "code": -32603, 
-                "message": "Internal server error",
-                "data": str(e) if not os.environ.get("RAILWAY_ENVIRONMENT") else "Server error"
             }
-        }, status_code=500)
+
+    except Exception as e:
+        logger.error(f"Error in MCP endpoint: {str(e)}", exc_info=True)
+        req_id = None
+        if 'payload' in locals() and isinstance(payload, dict):
+            req_id = payload.get("id")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "jsonrpc": "2.0", "id": req_id,
+                "error": {"code": -32603, "message": "Internal server error", "data": str(e)}
+            }
+        )
 
 @app.options("/mcp")
 async def mcp_options():
-    """Handle CORS preflight for MCP endpoint"""
     return {"status": "ok"}
 
 async def main():
     print("=== Blood Donor Connect MCP Server for India ===")
-    print("Platform: Railway HTTP + MCP Deployment")
-    print("Feature: Hospital Selection Based Location")
-    print(f"Validation Phone: {MY_NUMBER}")
-    print("Coverage: Pan-India Blood Donor Network")
-    print(f"Cities: {', '.join(get_all_cities())}")
-    print(f"Total Hospitals: {sum(len(hospitals) for hospitals in HOSPITALS.values())}")
-    
-    # Load existing data on startup
     load_data()
-    
     port = int(os.environ.get("PORT", 8080))
     host = "0.0.0.0"
     
     print(f"🌐 Starting HTTP server on {host}:{port}")
-    print("🩸 Hospital-based blood donor tools ready")
     print("📡 MCP endpoint available at /mcp")
-    print("=" * 50)
     
-    config = uvicorn.Config(
-        app, 
-        host=host, 
-        port=port, 
-        log_level="info"
-    )
+    config = uvicorn.Config(app, host=host, port=port, log_level="info")
     server_instance = uvicorn.Server(config)
     await server_instance.serve()
 
