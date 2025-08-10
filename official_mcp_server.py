@@ -79,18 +79,37 @@ def get_hospitals_in_city(city):
     """Get all hospitals in a specific city"""
     return HOSPITALS.get(city.lower(), [])
 
-def find_hospital_by_name(hospital_name):
-    """Find hospital by name across all cities"""
-    for city, hospitals in HOSPITALS.items():
+def find_hospital_by_name(hospital_name, city=None):
+    """Find hospital by name, optionally filtered by city"""
+    if city:
+        # Search within specific city first
+        city_hospitals = HOSPITALS.get(city.lower(), [])
+        for hospital in city_hospitals:
+            if hospital_name.lower() in hospital["name"].lower():
+                return hospital, city.lower()
+    
+    # If not found in specified city, search all cities
+    for city_name, hospitals in HOSPITALS.items():
         for hospital in hospitals:
             if hospital_name.lower() in hospital["name"].lower():
-                return hospital, city
+                return hospital, city_name
+    
     return None, None
 
 @server.list_tools()
 async def handle_list_tools() -> list[types.Tool]:
     """List available blood donor tools with hospital selection."""
     return [
+        types.Tool(
+            name="help",
+            description="Show all available blood donor tools and how to use them",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "tool_name": {"type": "string", "description": "Optional: Get detailed help for a specific tool"}
+                },
+            },
+        ),
         types.Tool(
             name="validate",
             description="Validation tool that returns your phone number for PuchAI",
@@ -172,34 +191,142 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> list[
     
     elif name == "register_blood_donor":
         if not arguments:
-            raise ValueError("Missing arguments for register_blood_donor")
+            return [types.TextContent(type="text", text="""❌ Missing registration information!
+
+Please provide:
+• Name: Your full name
+• Blood Type: O+, A+, B+, AB+, O-, A-, B-, AB-
+• City: mumbai, delhi, bangalore, chennai, kolkata, hyderabad, pune
+• Hospital: Name of nearest hospital
+• Phone: Your contact number
+
+Example: "Register donor Arjun Kumar O+ Mumbai Apollo Hospital 9876543210"
+
+Use 'help register_blood_donor' for more details.""")]
         
+        # Check for missing required fields
+        required_fields = ["name", "blood_type", "city", "hospital_name", "phone"]
+        missing_fields = [field for field in required_fields if not arguments.get(field)]
+        
+        if missing_fields:
+            cities_list = ", ".join(get_all_cities())
+            result = f"❌ Missing required information: {', '.join(missing_fields)}\n\n"
+            
+            if "city" in missing_fields:
+                result += f"🏙️ Available cities: {cities_list}\n"
+            
+            if "hospital_name" in missing_fields and arguments.get("city"):
+                city_hospitals = get_hospitals_in_city(arguments["city"])
+                hospital_names = [h["name"] for h in city_hospitals]
+                result += f"🏥 Hospitals in {arguments['city'].title()}: {', '.join(hospital_names)}\n"
+            
+            result += "\n💡 Please provide all required information to register as a blood donor."
+            return [types.TextContent(type="text", text=result)]
+        
+        # Continue with registration logic...
         city = arguments["city"].lower()
         hospital_name = arguments["hospital_name"]
         
-        # Find the hospital
-        hospital, found_city = find_hospital_by_name(hospital_name)
+        # Find hospital
+        hospital, found_city = find_hospital_by_name(hospital_name, city)
         if not hospital:
             available_hospitals = get_hospitals_in_city(city)
             hospital_list = ", ".join([h["name"] for h in available_hospitals])
-            return [types.TextContent(type="text", text=f"❌ Hospital '{hospital_name}' not found in {city}. Available hospitals: {hospital_list}")]
+            return [types.TextContent(type="text", text=f"❌ Hospital '{hospital_name}' not found in {city.title()}.\n\n🏥 Available hospitals: {hospital_list}\n\n💡 Try using partial names like 'Apollo' or 'Fortis'")]
         
+        # Ensure we use the correct city's hospital details
+        if found_city != city:
+            return [types.TextContent(type="text", text=f"❌ '{hospital_name}' found in {found_city.title()}, but you selected {city.title()}.\n\nPlease either:\n• Change city to {found_city.title()}, or\n• Choose a hospital in {city.title()}")]
+        
+        # Create donor record
         donor = {
             "name": arguments["name"],
             "blood_type": arguments["blood_type"],
             "city": city,
             "hospital": hospital["name"],
+            "phone": arguments["phone"],
             "latitude": hospital["lat"],
-            "longitude": hospital["lng"],
-            "phone": arguments["phone"]
+            "longitude": hospital["lng"]
         }
         donors.append(donor)
         
-        result = f"✅ Successfully registered {donor['name']} as {donor['blood_type']} blood donor in {city.title()}\n"
-        result += f"📍 Nearest hospital: {hospital['name']}\n"
-        result += f"📞 Emergency: {hospital['emergency']}\n"
-        result += f"🩸 Blood bank: {hospital['blood_bank']}\n"
-        result += f"📊 Total donors: {len(donors)}"
+        result = f"✅ Blood donor registered successfully!\n\n"
+        result += f"👤 Name: {donor['name']}\n"
+        result += f"🩸 Blood Type: {donor['blood_type']}\n"
+        result += f"🏙️ City: {city.title()}\n"
+        result += f"🏥 Hospital: {hospital['name']}\n"
+        result += f"📞 Phone: {donor['phone']}\n"
+        result += f"🆔 Donor ID: {len(donors)}\n\n"
+        result += f"🚨 Emergency Contact: {hospital['emergency']}\n"
+        result += f"🩸 Blood Bank: {hospital['blood_bank']}"
+        
+        return [types.TextContent(type="text", text=result)]
+    
+    elif name == "help":
+        tool_name = arguments.get("tool_name") if arguments else None
+        
+        if tool_name:
+            # Detailed help for specific tool
+            if tool_name == "register_blood_donor":
+                result = """🩸 REGISTER BLOOD DONOR HELP
+
+Usage: Provide all required information:
+• name: Your full name
+• blood_type: O+, A+, B+, AB+, O-, A-, B-, AB-
+• city: Choose from: mumbai, delhi, bangalore, chennai, kolkata, hyderabad, pune
+• hospital_name: Name of your nearest hospital (partial name OK)
+• phone: Your contact number
+
+Example: "Register donor Arjun Kumar O+ Mumbai Apollo Hospital 9876543210"
+"""
+            elif tool_name == "find_nearby_donors":
+                result = """🔍 FIND NEARBY DONORS HELP
+
+Usage: Search for blood donors near a hospital:
+• blood_type: Required blood type (O+, A+, B+, AB+, O-, A-, B-, AB-)
+• city: City to search in
+• hospital_name: Reference hospital for location
+• radius_km: Search radius (default: 10km)
+
+Example: "Find O+ donors near Apollo Hospital in Mumbai within 15km"
+"""
+            elif tool_name == "emergency_blood_request":
+                result = """🚨 EMERGENCY BLOOD REQUEST HELP
+
+Usage: Create urgent blood donation request:
+• patient_name: Name of patient needing blood
+• blood_type: Required blood type
+• city: City where hospital is located
+• hospital_name: Hospital where patient is admitted
+• urgency: Urgency level (default: high)
+
+Example: "Emergency request for John Doe O+ at Apollo Mumbai"
+"""
+            else:
+                result = f"❌ Help not available for tool: {tool_name}\n\nUse 'help' without arguments to see all available tools."
+        else:
+            # General help
+            result = """🩸 BLOOD DONOR CONNECT INDIA - AVAILABLE COMMANDS
+
+📋 AVAILABLE TOOLS:
+1. help - Show this help message
+2. register_blood_donor - Register as blood donor
+3. find_nearby_donors - Find donors near hospital
+4. emergency_blood_request - Create urgent blood request
+5. list_hospitals_by_city - View hospitals by city
+6. list_donors - See all registered donors
+7. validate - System validation (returns: 918910662391)
+
+🏙️ SUPPORTED CITIES:
+Mumbai, Delhi, Bangalore, Chennai, Kolkata, Hyderabad, Pune
+
+💡 TIPS:
+• Use 'help [tool_name]' for detailed help
+• Hospital names can be partial (e.g., "Apollo" finds "Apollo Hospital")
+• All tools are designed for emergency blood matching across India
+
+🚨 EMERGENCY: For immediate help, use emergency_blood_request tool
+"""
         
         return [types.TextContent(type="text", text=result)]
     
@@ -213,7 +340,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> list[
         radius_km = arguments.get("radius_km", 10)
         
         # Find the hospital
-        hospital, _ = find_hospital_by_name(hospital_name)
+        hospital, _ = find_hospital_by_name(hospital_name, city)
         if not hospital:
             return [types.TextContent(type="text", text=f"❌ Hospital '{hospital_name}' not found in {city}")]
         
@@ -252,7 +379,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> list[
         hospital_name = arguments["hospital_name"]
         
         # Find the hospital
-        hospital, _ = find_hospital_by_name(hospital_name)
+        hospital, _ = find_hospital_by_name(hospital_name, city)
         if not hospital:
             return [types.TextContent(type="text", text=f"❌ Hospital '{hospital_name}' not found in {city}")]
         
