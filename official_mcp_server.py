@@ -192,6 +192,19 @@ async def handle_list_tools() -> list[types.Tool]:
             },
         ),
         types.Tool(
+            name="get_hospital_details",
+            description="Get detailed information for hospitals in a specific city with pagination",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "city": {"type": "string", "description": "City name", "enum": list(HOSPITALS.keys())},
+                    "start_index": {"type": "integer", "description": "Starting hospital index", "default": 0},
+                    "limit": {"type": "integer", "description": "Number of hospitals to return", "default": 2}
+                },
+                "required": ["city"]
+            },
+        ),
+        types.Tool(
             name="find_nearby_donors",
             description="Find compatible blood donors near a specific hospital in India",
             inputSchema={
@@ -478,6 +491,16 @@ Use 'help register_blood_donor' for more details.""")]
             
             return [types.TextContent(type="text", text=result)]
         
+        elif name == "hospital_network_status":
+            result = f"🩸 Blood Donor Connect India - Network Status\n\n"
+            result += f"✅ Server: Online and operational\n"
+            result += f"🏥 Cities: {len(HOSPITALS)} major Indian cities\n"
+            result += f"🏨 Hospitals: {sum(len(h) for h in HOSPITALS.values())} total\n"
+            result += f"📱 Emergency contacts: Available for all hospitals\n\n"
+            result += f"🔧 Use 'list_hospitals_by_city' with specific city for details"
+            
+            return [types.TextContent(type="text", text=result)]
+        
         elif name == "emergency_blood_request":
             if not arguments:
                 return [types.TextContent(type="text", text="Missing arguments for emergency_blood_request")]
@@ -538,28 +561,36 @@ Use 'help register_blood_donor' for more details.""")]
         
         elif name == "list_hospitals_by_city":
             city_filter = arguments.get("city", "all").lower() if arguments else "all"
-            
+        
             if city_filter == "all":
-                result = "🏥 Major Hospitals Across India:\n\n"
-                for city_name, city_hospitals in HOSPITALS.items():
-                    result += f"📍 {city_name.upper()}:\n"
-                    for i, hospital in enumerate(city_hospitals, 1):
-                        result += f"{i}. {hospital['name']}\n"
-                        result += f"   Emergency: {hospital['emergency']}\n"
-                        result += f"   Blood Bank: {hospital['blood_bank']}\n\n"
+                # Return summary instead of full list to avoid truncation
+                total_hospitals = sum(len(hospitals) for hospitals in HOSPITALS.values())
+                result = f"🏥 Blood Donor Connect India - Hospital Network\n\n"
+                result += f"📊 Coverage: {len(HOSPITALS)} cities, {total_hospitals} hospitals\n\n"
+                result += "🏙️ Available Cities:\n"
+                for city_name in HOSPITALS.keys():
+                    city_count = len(HOSPITALS[city_name])
+                    result += f"• {city_name.title()}: {city_count} hospitals\n"
+                result += f"\n💡 Use specific city name to view hospital details"
+                
             else:
                 city_hospitals = get_hospitals_in_city(city_filter)
                 if city_hospitals:
-                    result = f"🏥 Hospitals in {city_filter.title()}:\n\n"
-                    for i, hospital in enumerate(city_hospitals, 1):
+                    # Limit to 3 hospitals max to avoid truncation
+                    display_hospitals = city_hospitals[:3]
+                    result = f"🏥 Top Hospitals in {city_filter.title()}:\n\n"
+                    
+                    for i, hospital in enumerate(display_hospitals, 1):
                         result += f"{i}. {hospital['name']}\n"
-                        result += f"   Emergency: {hospital['emergency']}\n"
-                        result += f"   Blood Bank: {hospital['blood_bank']}\n\n"
-                    result += f"💡 Tip: Use the hospital name when registering as a donor or creating emergency requests!"
+                        result += f"   🚨 Emergency: {hospital['emergency']}\n"
+                        result += f"   🩸 Blood Bank: {hospital['blood_bank']}\n\n"
+                    
+                    if len(city_hospitals) > 3:
+                        result += f"+ {len(city_hospitals)-3} more hospitals available"
                 else:
                     available_cities = ", ".join(get_all_cities())
-                    result = f"❌ City '{city_filter}' not found. Available cities: {available_cities}"
-            
+                    result = f"❌ City '{city_filter}' not found.\n🏙️ Available: {available_cities}"
+        
             return [types.TextContent(type="text", text=result)]
         
         elif name == "list_donors":
