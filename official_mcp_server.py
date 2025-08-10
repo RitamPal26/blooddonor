@@ -280,6 +280,10 @@ async def main():
     print("Coverage: Pan-India Blood Donor Network")
     print("=" * 50)
     
+    import os
+    port = int(os.environ.get("PORT", 8080))
+    host = os.environ.get("HOST", "0.0.0.0")
+    
     # Run the server using stdio transport
     async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
         await server.run(

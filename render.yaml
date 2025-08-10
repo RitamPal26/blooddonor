@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: blood-donor-india-mcp
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python official_mcp_server.py"
+    plan: free
