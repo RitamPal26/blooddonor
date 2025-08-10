@@ -160,12 +160,12 @@ async def handle_list_tools() -> list[types.Tool]:
     """List available blood donor tools with hospital selection."""
     return [
         types.Tool(
-            name="help",
-            description="Show all available blood donor tools and how to use them",
+            name="donor_help",
+            description="Shows all available commands and help for the blood donor tool set.",
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "tool_name": {"type": "string", "description": "Optional: Get detailed help for a specific tool"}
+                    "tool_name": {"type": "string", "description": "Optional: Get detailed help for a specific command"}
                 },
             },
         ),
@@ -266,7 +266,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> list[
         if name == "validate":
             return [types.TextContent(type="text", text=MY_NUMBER)]
         
-        elif name == "help":
+        elif name == "donor_help":
             # (Help logic remains the same, omitted for brevity but should be kept in your file)
             tool_name = arguments.get("tool_name") if arguments else None
             
